@@ -1,20 +1,22 @@
 from __future__ import annotations
-
 import sys
+import logging
+
+from collections import namedtuple
+from dataclasses import dataclass
+
 import requests
 from bs4 import BeautifulSoup, Tag
+
 import re
 import gdown
 from pathlib import Path
 import os
 
-from collections import namedtuple
-from dataclasses import dataclass
-
-import zipfile
-import rarfile
-import py7zr
 import patoolib
+
+
+logger = logging.getLogger(__name__)
 
 
 Track = namedtuple('Track', ['event', 'num', 'artists', 'team', 'title', 'size', 'addr'])
@@ -25,7 +27,7 @@ class Task:
     save_to: Path
     start: int = 1
     end: int = 999
-    SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList"
+    SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList" # 
 
     @classmethod
     def from_sysargv(cls, argv: list) -> Task:
@@ -36,15 +38,16 @@ class Task:
         soup = self._fetch_html()
         has_team = self._inspect_headers(soup)
         tracks = self._get_tracks(soup, has_team)
-        oversee = [] #
+        li = [] #
         for track in tracks:
             track_dir = self._mkdir(track)
             if len(track.addr.find_all('a')) != 1:
-                oversee.append(track)
+                li.append(track)
             for anchor in track.addr.find_all('a'):
                 saved = self._download(anchor, to=track_dir)
-                self._extract(saved, to=track_dir)
-            self._handle_filedepth(track_dir)
+                if saved is None:
+                    continue # 
+                self._extract(saved)
 
     def _fetch_html(self) -> BeautifulSoup:
         params = {'event':self.event, 'start':self.start, 'end':self.end}
@@ -107,42 +110,63 @@ class Task:
 
     def _download(self, anchor: Tag, to: Path) -> str:
         patterns = {
-            re.compile(r'google\.com/(?:open|file|uc)'): self._dl_google_file,
+            re.compile(r'google\.com/(?:open|file|uc|download)'): self._dl_google_file,
             re.compile(r'google\.com/drive/folders/'): self._dl_google_folder,
             re.compile(r'dropbox\.com'): self._dl_dropbox,
         }
         for pattern, download in patterns.items():
             if pattern.search(anchor['href']):
-                return download(anchor, to)
+                return download(anchor, to) 
+        return None #
 
     def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path: 
         output = str(track_dir) + os.path.sep  # gdown.download: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
-        saved = gdown.download(url=anchor['href'], output=output)
+        try:
+            saved = gdown.download(url=anchor['href'], output=output)
+        except Exception as e:
+            logger.info(e)
+            return 
+        print(f'{'':-^40}')
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
         
     def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path: 
         output = str(track_dir) + os.path.sep  # gdown.download_folder: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
-        saved = gdown.download_folder(url=anchor['href'], output=output) 
+        try:
+            saved = gdown.download_folder(url=anchor['href'], output=output) 
+        except Exception as e:
+            logger.info(e)
+            return 
+        print(f'{'':-^40}')
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
 
     def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path:
         url = re.sub('dl=0', 'dl=1', anchor['href'])
         output = str(track_dir) + os.path.sep  # gdown.download: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
-        saved = gdown.download(url=url, output=output)
+        try:
+            saved = gdown.download(url=url, output=output)
+        except:
+            logger.info(e)
+            return
+        print(f'{'':-^40}')
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
 
-    def _extract(self, saved: Path, to: Path): 
-        if not patoolib.is_archive(saved): return None
-        return patoolib.extract_archive(str(saved), outdir=str(to))
+    def _extract(self, saved: Path): 
+        if not patoolib.is_archive(saved): return
+        try:
+            patoolib.extract_archive(str(saved), outdir=str(saved.parent), interactive=False, verbosity=-1)
+        except Exception as e:
+            print(e) #
+        saved.unlink()
 
-    def _handle_filedepth(self, track_dir):
+    def _handle_filedepth(self, track_dir: Path):
         pass
-        
+
 
 def main():
+    logging.basicConfig(filename='log.txt', filemode='w', encoding='utf-8', level=logging.DEBUG) # filename path
     if len(sys.argv) == 5:
         task = Task.from_sysargv(sys.argv)
         task.run()
@@ -153,4 +177,6 @@ if __name__ == '__main__':
     main()
 
 
+# id
 # The ability to recognize and integrate different file catogories of a same song (.wav, .ogg, additional BGA file).
+# Google folders
