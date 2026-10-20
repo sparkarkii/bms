@@ -1,26 +1,32 @@
 from __future__ import annotations
 import sys
 import logging
-
 from collections import namedtuple
 from dataclasses import dataclass
-
+from pathlib import Path
 import requests
 from bs4 import BeautifulSoup, Tag
+import re
 
 import gdown
 from gdown.parse_url import is_google_drive_url
-import re
-from pathlib import Path
-import os
-
 import patoolib
 
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
+Track = namedtuple('Track', [
+    'event', 
+    'num', 
+    'artists', 
+    'team', 
+    'title', 
+    'size', 
+    'addr',
+])
 
-Track = namedtuple('Track', ['event', 'num', 'artists', 'team', 'title', 'size', 'addr'])
+
+
 
 @dataclass
 class Task:
@@ -30,10 +36,12 @@ class Task:
     end: int = 999
     SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList" # to-do: implement it as a class constant.
 
+
     @classmethod
     def from_sysargv(cls, argv: list) -> Task:
         _, event, save_to, start, end = argv
         return cls(event, Path(save_to), start, end)
+
 
     def run(self):
         soup = self._fetch_html()
@@ -50,10 +58,12 @@ class Task:
                     continue  
                 self._extract(saved)
 
+
     def _fetch_html(self) -> BeautifulSoup:
         params = {'event':self.event, 'start':self.start, 'end':self.end}
         html = requests.get(self.SITE, params=params).content.decode('Shift_JIS')
         return BeautifulSoup(html, 'html5lib')
+    
 
     def _inspect_headers(self, soup) -> bool:
         headers = [th.text for th in soup.thead.find_all('th')]
@@ -64,6 +74,7 @@ class Task:
                 return False # doesn't have the "team" column. 
             case _:
                 raise Exception(f'Match-case failed. headers: {headers}.')
+
 
     def _get_tracks(self, soup, has_team: bool) -> list[Track]:
         tracks = []
@@ -98,16 +109,21 @@ class Task:
                     raise Exception(f'Match-case failed. has_team: {has_team}, row_data: {row_data}.')
         return tracks
 
+
     def _mkdir(self, track) -> Path:
-        name = self._validate(f'{track.num}. {track.title} (by {track.artists})')
+        name = self._validate(
+            f'{track.num}. {track.title} (by {track.artists})'
+        )
         track_dir = self.save_to / name 
         track_dir.mkdir(parents=True, exist_ok=True)
         return track_dir
+
 
     def _validate(self, data: str) -> str: 
         if len(data) > 255:
             data = data[:255]
         return re.sub(r'[*"/\<>:|?]', '_', data)
+
 
     def _download(self, anchor: Tag, to: Path) -> str | None: 
         match_host = { 
@@ -119,81 +135,109 @@ class Task:
         for match, download in match_host.items(): # to-do: rename the variables.
             if match(anchor['href']):
                 return download(anchor, to) 
-        raise Exception
+
 
     def _is_dropbox(self, url: str) -> bool: # to-do: move this method to another module.
         return re.search(r'dropbox\.com', url)
 
+
     def _is_google_folder(self, url: str) -> bool: # to-do: move this method to another module.
         return re.search(r'\drive\folders', url)
+
 
     def _match_all(self, url:str) -> bool: # to-do: move this method to another module.
         return True
 
-    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path: 
-        output = str(track_dir) + os.path.sep  # gdown.download: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
+
+    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | None: 
+        output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download(url=anchor['href'], output=output)
-        except Exception as e:
+            # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
+        except:
+            logger.info(e) # to-do: log more details
             print('A gdown exception has occurred.')
-            logger.info(e) # to-do: log more details.
             print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return None
-        print(f'{'':-^40}')
-        if saved is None: raise Exception(f'saved: {saved}')
-        return Path(saved)
+        else:
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return Path(saved)
+
         
-    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path: 
-        output = str(track_dir) + os.path.sep  # gdown.download_folder: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
+    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | None: 
+        output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download_folder(url=anchor['href'], output=output) 
-        except Exception as e:
-            print('A gdown exception has occurred.')
-            logger.info(e) # to-do: log more details
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-            return None 
-        print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-        if saved is None: raise Exception(f'saved: {saved}')
-        return Path(saved)
-
-    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path:
-        url = re.sub('dl=0', 'dl=1', anchor['href'])
-        output = str(track_dir) + os.path.sep  # gdown.download: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
-        try:
-            saved = gdown.download(url=url, output=output)
+            # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
         except:
-            print('A gdown exception has occurred.')
             logger.info(e) # to-do: log more details
+            print('A gdown exception has occurred.')
             print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return None
-        print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-        if saved is None: raise Exception(f'saved: {saved}')
-        return Path(saved)
+        else:
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return Path(saved)
+
+
+    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | None:
+        url = re.sub('dl=0', 'dl=1', anchor['href'])
+        output = str(track_dir) + os.path.sep  
+        try:
+            saved = gdown.download(url=url, output=output)
+            # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
+        except:
+            logger.info(e) # to-do: log more details
+            print('A gdown exception has occurred.')
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return None
+        else:
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return Path(saved)
+
 
     def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
         print('unmatched track!!')
         print(f'{'':-^40}') # to-do: print a more nice-looking horizontal line.
         return None
 
+
     def _extract(self, saved: Path): 
-        if not patoolib.is_archive(saved): return
+        if not patoolib.is_archive(saved): 
+            return # to-do: log the file path.
+
         try:
-            patoolib.extract_archive(str(saved), outdir=str(saved.parent), interactive=False, verbosity=-1)
+            patoolib.extract_archive(
+                str(saved), 
+                outdir=str(saved.parent), 
+                interactive=False, 
+                verbosity=-1
+            )
         except Exception as e:
             print(e) # to-do: log the error.
+
         saved.unlink()
+
 
     def _handle_filedepth(self, track_dir: Path):
         pass
 
 
+
+
 def main():
-    logging.basicConfig(filename='log.txt', filemode='w', encoding='utf-8', level=logging.DEBUG) # to-do: refactor logging features.
+    logging.basicConfig( # to-do: refactor logging features.
+        filename='log.txt', 
+        filemode='w', 
+        encoding='utf-8', 
+        level=logging.DEBUG,
+    ) 
+
     if len(sys.argv) == 5:
         task = Task.from_sysargv(sys.argv)
         task.run()
     else: 
         print('requires 4 arguments: event number, save_to, start, and end.')  
+
 
 if __name__ == '__main__':  
     main()
