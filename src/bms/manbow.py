@@ -8,8 +8,9 @@ from dataclasses import dataclass
 import requests
 from bs4 import BeautifulSoup, Tag
 
-import re
 import gdown
+from gdown.parse_url import is_google_drive_url
+import re
 from pathlib import Path
 import os
 
@@ -39,7 +40,7 @@ class Task:
         has_team = self._inspect_headers(soup)
         tracks = self._get_tracks(soup, has_team)
         li = [] #
-        for track in tracks:
+        for track in tracks:    # to-do: show the track number clearly before self._download()
             track_dir = self._mkdir(track)
             if len(track.addr.find_all('a')) != 1:
                 li.append(track)
@@ -108,24 +109,36 @@ class Task:
             data = data[:255]
         return re.sub(r'[*"/\<>:|?]', '_', data)
 
-    def _download(self, anchor: Tag, to: Path) -> str:
-        patterns = {
-            re.compile(r'google\.com/(?:open|file|uc|download)'): self._dl_google_file,
-            re.compile(r'google\.com/drive/folders/'): self._dl_google_folder,
-            re.compile(r'dropbox\.com'): self._dl_dropbox,
+    def _download(self, anchor: Tag, to: Path) -> str | None: 
+        match_host = { 
+            is_google_drive_url: self._dl_google_file, 
+            self._is_google_folder: self._dl_google_folder,
+            self._is_dropbox: self._dl_dropbox,
+            self._match_all: self._handle_unmatched_track,
         }
-        for pattern, download in patterns.items():
-            if pattern.search(anchor['href']):
+        for match, download in match_host.items(): # to-do: rename the variables.
+            if match(anchor['href']):
                 return download(anchor, to) 
-        return None #
+        raise Exception
+
+    def _is_dropbox(self, url: str) -> bool: # to-do: move this method to another module.
+        return re.search(r'dropbox\.com', url)
+
+    def _is_google_folder(self, url: str) -> bool: # to-do: move this method to another module.
+        return re.search(r'\drive\folders', url)
+
+    def _match_all(self, url:str) -> bool: # to-do: move this method to another module.
+        return True
 
     def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path: 
         output = str(track_dir) + os.path.sep  # gdown.download: The parameter output expects a string. If output is an existing directory or ends with a path separator, the basename will be appended automatically.
         try:
             saved = gdown.download(url=anchor['href'], output=output)
         except Exception as e:
-            logger.info(e)
-            return 
+            print('A gdown exception has occurred.')
+            logger.info(e) # log more details
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return None
         print(f'{'':-^40}')
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
@@ -135,9 +148,11 @@ class Task:
         try:
             saved = gdown.download_folder(url=anchor['href'], output=output) 
         except Exception as e:
-            logger.info(e)
-            return 
-        print(f'{'':-^40}')
+            print('A gdown exception has occurred.')
+            logger.info(e) # log more details
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return None 
+        print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
 
@@ -147,11 +162,18 @@ class Task:
         try:
             saved = gdown.download(url=url, output=output)
         except:
-            logger.info(e)
-            return
-        print(f'{'':-^40}')
+            print('A gdown exception has occurred.')
+            logger.info(e) # log more details
+            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
+            return None
+        print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
+
+    def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: expand the function.
+        print('unmatched track!!')
+        print(f'{'':-^40}') # to-do: print a more nice-looking horizontal line.
+        return None
 
     def _extract(self, saved: Path): 
         if not patoolib.is_archive(saved): return
@@ -177,6 +199,7 @@ if __name__ == '__main__':
     main()
 
 
-# id
+
+
 # The ability to recognize and integrate different file catogories of a same song (.wav, .ogg, additional BGA file).
 # Google folders
