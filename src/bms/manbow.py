@@ -17,7 +17,7 @@ import os
 import patoolib
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
 
 Track = namedtuple('Track', ['event', 'num', 'artists', 'team', 'title', 'size', 'addr'])
@@ -28,7 +28,7 @@ class Task:
     save_to: Path
     start: int = 1
     end: int = 999
-    SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList" # 
+    SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList" # to-do: implement it as a class constant.
 
     @classmethod
     def from_sysargv(cls, argv: list) -> Task:
@@ -39,7 +39,7 @@ class Task:
         soup = self._fetch_html()
         has_team = self._inspect_headers(soup)
         tracks = self._get_tracks(soup, has_team)
-        li = [] #
+        li = [] # to-do: rename the variable.
         for track in tracks:    # to-do: show the track number clearly before self._download()
             track_dir = self._mkdir(track)
             if len(track.addr.find_all('a')) != 1:
@@ -47,7 +47,7 @@ class Task:
             for anchor in track.addr.find_all('a'):
                 saved = self._download(anchor, to=track_dir)
                 if saved is None:
-                    continue # 
+                    continue  
                 self._extract(saved)
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -136,7 +136,7 @@ class Task:
             saved = gdown.download(url=anchor['href'], output=output)
         except Exception as e:
             print('A gdown exception has occurred.')
-            logger.info(e) # log more details
+            logger.info(e) # to-do: log more details.
             print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return None
         print(f'{'':-^40}')
@@ -149,7 +149,7 @@ class Task:
             saved = gdown.download_folder(url=anchor['href'], output=output) 
         except Exception as e:
             print('A gdown exception has occurred.')
-            logger.info(e) # log more details
+            logger.info(e) # to-do: log more details
             print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return None 
         print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
@@ -163,14 +163,14 @@ class Task:
             saved = gdown.download(url=url, output=output)
         except:
             print('A gdown exception has occurred.')
-            logger.info(e) # log more details
+            logger.info(e) # to-do: log more details
             print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return None
         print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
         if saved is None: raise Exception(f'saved: {saved}')
         return Path(saved)
 
-    def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: expand the function.
+    def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
         print('unmatched track!!')
         print(f'{'':-^40}') # to-do: print a more nice-looking horizontal line.
         return None
@@ -180,7 +180,7 @@ class Task:
         try:
             patoolib.extract_archive(str(saved), outdir=str(saved.parent), interactive=False, verbosity=-1)
         except Exception as e:
-            print(e) #
+            print(e) # to-do: log the error.
         saved.unlink()
 
     def _handle_filedepth(self, track_dir: Path):
@@ -188,12 +188,12 @@ class Task:
 
 
 def main():
-    logging.basicConfig(filename='log.txt', filemode='w', encoding='utf-8', level=logging.DEBUG) # filename path
+    logging.basicConfig(filename='log.txt', filemode='w', encoding='utf-8', level=logging.DEBUG) # to-do: refactor logging features.
     if len(sys.argv) == 5:
         task = Task.from_sysargv(sys.argv)
         task.run()
     else: 
-        print('requires 4 arguments: event number, save_to, start, and end.') # 
+        print('requires 4 arguments: event number, save_to, start, and end.')  
 
 if __name__ == '__main__':  
     main()
