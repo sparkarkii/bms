@@ -4,6 +4,7 @@ import logging
 from collections import namedtuple
 from dataclasses import dataclass
 from pathlib import Path
+import os
 import requests
 from bs4 import BeautifulSoup, Tag
 import re
@@ -40,17 +41,25 @@ class Task:
     @classmethod
     def from_sysargv(cls, argv: list) -> Task:
         _, event, save_to, start, end = argv
-        return cls(event, Path(save_to), start, end)
+        return cls(
+            event, 
+            Path(save_to), 
+            start, 
+            end,
+        )
 
 
     def run(self):
         soup = self._fetch_html()
         has_team = self._inspect_headers(soup)
         tracks = self._get_tracks(soup, has_team)
+
         li = [] # to-do: rename the variable.
         for track in tracks:    # to-do: show the track number clearly before self._download()
             track_dir = self._mkdir(track)
-            if len(track.addr.find_all('a')) != 1:
+            if len(
+                track.addr.find_all('a')
+            ) != 1:
                 li.append(track)
             for anchor in track.addr.find_all('a'):
                 saved = self._download(anchor, to=track_dir)
@@ -60,7 +69,11 @@ class Task:
 
 
     def _fetch_html(self) -> BeautifulSoup:
-        params = {'event':self.event, 'start':self.start, 'end':self.end}
+        params = {
+            'event':self.event, 
+            'start':self.start, 
+            'end':self.end,
+        }
         html = requests.get(self.SITE, params=params).content.decode('Shift_JIS')
         return BeautifulSoup(html, 'html5lib')
     
@@ -68,10 +81,25 @@ class Task:
     def _inspect_headers(self, soup) -> bool:
         headers = [th.text for th in soup.thead.find_all('th')]
         match headers:
-            case ['No', 'Name', 'Team', 'Title', 'Size', 'Addr']:
-                return True # has the "team" column.
-            case ['No', 'Name', 'Title', 'Size', 'Addr']:
-                return False # doesn't have the "team" column. 
+            case [
+                'No', 
+                'Name', 
+                'Team', 
+                'Title', 
+                'Size', 
+                'Addr',
+            ]:
+                return True 
+                # has the "team" column.
+            case [
+                'No', 
+                'Name', 
+                'Title', 
+                'Size', 
+                'Addr',
+            ]:
+                return False 
+                # doesn't have the "team" column. 
             case _:
                 raise Exception(f'Match-case failed. headers: {headers}.')
 
@@ -152,7 +180,10 @@ class Task:
     def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | None: 
         output = str(track_dir) + os.path.sep  
         try:
-            saved = gdown.download(url=anchor['href'], output=output)
+            saved = gdown.download(
+                url=anchor['href'], 
+                output=output,
+            )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
         except:
             logger.info(e) # to-do: log more details
@@ -167,7 +198,10 @@ class Task:
     def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | None: 
         output = str(track_dir) + os.path.sep  
         try:
-            saved = gdown.download_folder(url=anchor['href'], output=output) 
+            saved = gdown.download_folder(
+                url=anchor['href'], 
+                output=output,
+            ) 
             # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
         except:
             logger.info(e) # to-do: log more details
@@ -183,7 +217,10 @@ class Task:
         url = re.sub('dl=0', 'dl=1', anchor['href'])
         output = str(track_dir) + os.path.sep  
         try:
-            saved = gdown.download(url=url, output=output)
+            saved = gdown.download(
+                url=url, 
+                output=output,
+            )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
         except:
             logger.info(e) # to-do: log more details
@@ -204,7 +241,6 @@ class Task:
     def _extract(self, saved: Path): 
         if not patoolib.is_archive(saved): 
             return # to-do: log the file path.
-
         try:
             patoolib.extract_archive(
                 str(saved), 
