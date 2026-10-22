@@ -11,6 +11,7 @@ import re
 
 import gdown
 from gdown.parse_url import is_google_drive_url
+from gdown import FileURLRetrievalError, DownloadError
 import patoolib
 
 
@@ -24,6 +25,11 @@ Track = namedtuple('Track', [
     'title', 
     'size', 
     'addr',
+])
+
+Error = namedtuple('Error', [
+    'type',
+    'msg',
 ])
 
 
@@ -57,15 +63,25 @@ class Task:
         li = [] # to-do: rename the variable.
         for track in tracks:    # to-do: show the track number clearly before self._download()
             track_dir = self._mkdir(track)
-            if len(
-                track.addr.find_all('a')
-            ) != 1:
+            anchors = track.addr.find_all('a')
+            if len(anchors) != 1:
                 li.append(track)
-            for anchor in track.addr.find_all('a'):
-                saved = self._download(anchor, to=track_dir)
-                if saved is None:
+
+            for index, anchor in enumerate(anchors, start=1):
+                self._print_horizontal_line()
+                self._print_msg(track.num, index)
+
+                result = self._download(anchor, to=track_dir)
+                if isinstance(result, Error):
+                    self._log_error(result, track.num, index, anchor)
                     continue  
-                self._extract(saved)
+                if result is None: # to-do: record the track number.
+                    continue
+
+                result = self._extract(result)
+                if isinstance(result, Error):
+                    self._log_error(result, track.num, index, anchor)
+
 
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -113,7 +129,7 @@ class Task:
                     tracks.append(
                         Track(
                             self.event,
-                            num.text,
+                            int(num.text),
                             artists.text,
                             team.text,
                             title.text,
@@ -125,7 +141,7 @@ class Task:
                     tracks.append(
                         Track(
                             self.event,
-                            num.text,
+                            int(num.text),
                             artists.text,
                             None,
                             title.text,
@@ -153,7 +169,37 @@ class Task:
         return re.sub(r'[*"/\<>:|?]', '_', data)
 
 
-    def _download(self, anchor: Tag, to: Path) -> str | None: 
+    def _print_msg(self, track_num: int, index: int) -> None: # to-do: rename the method.
+        print(
+            f'Processing track {track_num}, link {index}...'
+        )
+
+    
+    def _print_horizontal_line(self) -> None:
+        term_width = os.get_terminal_size()
+        print(
+            '-' * term_width.columns
+        )
+
+
+    def _log_error(
+        self, 
+        error: Error, 
+        track_num: int, 
+        index: int, 
+        anchor: Tag,
+    ) -> None: 
+        term_width = os.get_terminal_size()
+        horizontal_line = '-' * term_width.columns
+        logger.info(
+            f'\n'
+            f'{error.type.__name__} in track {track_num}, link {index}\n'
+            f'{error.msg}\n'
+            f'{horizontal_line}'
+        )
+
+
+    def _download(self, anchor: Tag, to: Path) -> Path | None | Error: 
         match_host = { 
             is_google_drive_url: self._dl_google_file, 
             self._is_google_folder: self._dl_google_folder,
@@ -177,7 +223,7 @@ class Task:
         return True
 
 
-    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | None: 
+    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | Error: 
         output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download(
@@ -185,17 +231,23 @@ class Task:
                 output=output,
             )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except:
-            logger.info(e) # to-do: log more details
-            print('A gdown exception has occurred.')
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-            return None
+        except FileURLRetrievalError as e:
+            print('Skip. (a gdown error has occurred)')
+            return Error(
+                FileURLRetrievalError,
+                e,
+            )
+        except DownloadError as e:
+            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
+            return Error(
+                DownloadError, 
+                e,
+            )
         else:
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return Path(saved)
 
         
-    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | None: 
+    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | Error: 
         output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download_folder(
@@ -203,17 +255,23 @@ class Task:
                 output=output,
             ) 
             # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except:
-            logger.info(e) # to-do: log more details
-            print('A gdown exception has occurred.')
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-            return None
+        except FileURLRetrievalError as e:
+            print('Skip. (a gdown error has occurred)')
+            return Error(
+                FileURLRetrievalError,
+                e,
+            )
+        except DownloadError as e:
+            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
+            return Error(
+                DownloadError, 
+                e,
+            )
         else:
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return Path(saved)
 
 
-    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | None:
+    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | Error:
         url = re.sub('dl=0', 'dl=1', anchor['href'])
         output = str(track_dir) + os.path.sep  
         try:
@@ -222,36 +280,45 @@ class Task:
                 output=output,
             )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except:
-            logger.info(e) # to-do: log more details
-            print('A gdown exception has occurred.')
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
-            return None
+        except FileURLRetrievalError as e:
+            print('Skip. (a gdown error has occurred)')
+            return Error(
+                FileURLRetrievalError,
+                e,
+            )
+        except DownloadError as e:
+            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
+            return Error(
+                DownloadError, 
+                e,
+            )
         else:
-            print(f'{'':-^40}') # to-do: print a nice-looking horizontal line.
             return Path(saved)
 
 
     def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
-        print('unmatched track!!')
-        print(f'{'':-^40}') # to-do: print a more nice-looking horizontal line.
+        print('Skip. (unsupported URL host)')
         return None
 
 
-    def _extract(self, saved: Path): 
+    def _extract(self, saved: Path) -> None | Error: 
         if not patoolib.is_archive(saved): 
             return # to-do: log the file path.
         try:
-            patoolib.extract_archive(
+            print('Extracting...')
+            patoolib.extract_archive( # to-do: could not find an executable program to extract format rar; candidates are rar,unrar,7z,7zz,7zzs,unar
                 str(saved), 
                 outdir=str(saved.parent), 
                 interactive=False, 
                 verbosity=-1
             )
-        except Exception as e:
-            print(e) # to-do: log the error.
+        except PatoolError as e:
+            return Error(
+                FileURLRetrievalError,
+                e,
+            )
 
-        saved.unlink()
+        saved.unlink() # to-do: patoolib can't extract some types of archive and it won't raise an error in this case, and the archive will be deleted next. That's not what we want.
 
 
     def _handle_filedepth(self, track_dir: Path):
@@ -265,7 +332,7 @@ def main():
         filename='log.txt', 
         filemode='w', 
         encoding='utf-8', 
-        level=logging.DEBUG,
+        level=logging.INFO,
     ) 
 
     if len(sys.argv) == 5:
@@ -280,6 +347,12 @@ if __name__ == '__main__':
 
 
 
+
+# to-do: move the logging functions to a separate script.
+# to-do: log the file path after gdown.download finished if the file is broken.
+# patool: different MIME types detected
+# inspect gdown.download parameter. Find a way (if there is one) to show only the download progress bar on terminal.
+# gdown.download: The speed, callback, and log_message parameters.
 
 # The ability to recognize and integrate different file catogories of a same song (.wav, .ogg, additional BGA file).
 # Google folders
