@@ -64,14 +64,15 @@ class Task:
 
             for index, anchor in enumerate(anchors, start=1):
                 self._print_horizontal_line()
-                self._print_msg(track.num, index)
+                self._print_msg(track.num, index) # to-do: rename the method
 
-                result = self._download(anchor, to=track_dir)
-                if isinstance(result, Exception):
-                    self._log_error(result, track.num, index, anchor)
-                    continue  
+                download = self._dispatch(anchor)
+                result = download(anchor, to=track_dir) # to-do: pass url instead of anchor
                 if result is None: # to-do: record the track number.
                     continue
+                elif isinstance(result, Exception):
+                    self._log_error(result, track.num, index, anchor)
+                    continue  
 
                 result = self._extract(result)
                 if isinstance(result, Exception):
@@ -177,7 +178,7 @@ class Task:
         )
 
 
-    def _log_error(
+    def _log_error( # to-do: rename the method to _log
         self, 
         error: FileURLRetrievalError | DownloadError | PatoolError, 
         track_num: int, 
@@ -194,16 +195,17 @@ class Task:
         )
 
 
-    def _download(self, anchor: Tag, to: Path) -> Path | FileURLRetrievalError | DownloadError | None: 
-        match_host = { 
-            is_google_drive_url: self._dl_google_file, 
+    def _dispatch(self, anchor: Tag) -> self._dl_google_folder | self._dl_google_file | self._dl_dropbox:
+        dispatch_table = { 
             self._is_google_folder: self._dl_google_folder,
+            is_google_drive_url: self._dl_google_file, 
             self._is_dropbox: self._dl_dropbox,
-            self._match_all: self._handle_unmatched_track,
         }
-        for match, download in match_host.items(): # to-do: rename the variables.
-            if match(anchor['href']):
-                return download(anchor, to) 
+        for matches, do in dispatch_table.items():
+            url = anchor['href']
+            if matches(url):
+                return do
+        return self._handle_unmatched_link
 
 
     def _is_dropbox(self, url: str) -> bool: # to-do: move this method to another module.
@@ -214,12 +216,8 @@ class Task:
         return re.search(r'\drive\folders', url)
 
 
-    def _match_all(self, url:str) -> bool: # to-do: move this method to another module.
-        return True
-
-
-    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | FileURLRetrievalError | DownloadError: 
-        output = str(track_dir) + os.path.sep  
+    def _dl_google_file(self, anchor: Tag, to: Path) -> Path | FileURLRetrievalError | DownloadError: 
+        output = str(to) + os.path.sep  
         try:
             saved = gdown.download(
                 url=anchor['href'], 
@@ -237,8 +235,8 @@ class Task:
             return Path(saved)
 
         
-    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | DownloadError: 
-        output = str(track_dir) + os.path.sep  
+    def _dl_google_folder(self, anchor: Tag, to: Path) -> Path | DownloadError: 
+        output = str(to) + os.path.sep  
         try:
             saved = gdown.download_folder(
                 url=anchor['href'], 
@@ -253,9 +251,9 @@ class Task:
             return Path(saved)
 
 
-    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | DownloadError:
+    def _dl_dropbox(self, anchor: Tag, to: Path) -> Path | DownloadError:
         url = re.sub('dl=0', 'dl=1', anchor['href'])
-        output = str(track_dir) + os.path.sep  
+        output = str(to) + os.path.sep  
         try:
             saved = gdown.download(
                 url=url, 
@@ -270,7 +268,7 @@ class Task:
             return Path(saved)
 
 
-    def _handle_unmatched_track(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
+    def _handle_unmatched_link(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
         print('Skip. (unsupported URL host)')
         return None
 
