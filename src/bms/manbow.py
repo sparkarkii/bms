@@ -27,11 +27,6 @@ Track = namedtuple('Track', [
     'addr',
 ])
 
-Error = namedtuple('Error', [
-    'type',
-    'msg',
-])
-
 
 
 
@@ -72,14 +67,14 @@ class Task:
                 self._print_msg(track.num, index)
 
                 result = self._download(anchor, to=track_dir)
-                if isinstance(result, Error):
+                if isinstance(result, Exception):
                     self._log_error(result, track.num, index, anchor)
                     continue  
                 if result is None: # to-do: record the track number.
                     continue
 
                 result = self._extract(result)
-                if isinstance(result, Error):
+                if isinstance(result, Exception):
                     self._log_error(result, track.num, index, anchor)
 
 
@@ -184,7 +179,7 @@ class Task:
 
     def _log_error(
         self, 
-        error: Error, 
+        error: FileURLRetrievalError | DownloadError | PatoolError, 
         track_num: int, 
         index: int, 
         anchor: Tag,
@@ -193,13 +188,13 @@ class Task:
         horizontal_line = '-' * term_width.columns
         logger.info(
             f'\n'
-            f'{error.type.__name__} in track {track_num}, link {index}\n'
-            f'{error.msg}\n'
+            f"{type(error).__name__} in track {track_num}, link {index}. ({anchor['href']})\n"
+            f'{error}\n'
             f'{horizontal_line}'
         )
 
 
-    def _download(self, anchor: Tag, to: Path) -> Path | None | Error: 
+    def _download(self, anchor: Tag, to: Path) -> Path | FileURLRetrievalError | DownloadError | None: 
         match_host = { 
             is_google_drive_url: self._dl_google_file, 
             self._is_google_folder: self._dl_google_folder,
@@ -223,7 +218,7 @@ class Task:
         return True
 
 
-    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | Error: 
+    def _dl_google_file(self, anchor: Tag, track_dir: Path) -> Path | FileURLRetrievalError | DownloadError: 
         output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download(
@@ -231,23 +226,18 @@ class Task:
                 output=output,
             )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except FileURLRetrievalError as e:
+        except (
+            FileURLRetrievalError,
+            DownloadError,
+        ) as error:
             print('Skip. (a gdown error has occurred)')
-            return Error(
-                FileURLRetrievalError,
-                e,
-            )
-        except DownloadError as e:
-            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
-            return Error(
-                DownloadError, 
-                e,
-            )
+            return error
+
         else:
             return Path(saved)
 
         
-    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | Error: 
+    def _dl_google_folder(self, anchor: Tag, track_dir: Path) -> Path | DownloadError: 
         output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download_folder(
@@ -255,23 +245,15 @@ class Task:
                 output=output,
             ) 
             # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except FileURLRetrievalError as e:
-            print('Skip. (a gdown error has occurred)')
-            return Error(
-                FileURLRetrievalError,
-                e,
-            )
-        except DownloadError as e:
-            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
-            return Error(
-                DownloadError, 
-                e,
-            )
+        except DownloadError as error:
+            print('Skip. (A gdown error has occurred)')
+            return error
+
         else:
             return Path(saved)
 
 
-    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | Error:
+    def _dl_dropbox(self, anchor: Tag, track_dir: Path) -> Path | DownloadError:
         url = re.sub('dl=0', 'dl=1', anchor['href'])
         output = str(track_dir) + os.path.sep  
         try:
@@ -280,18 +262,10 @@ class Task:
                 output=output,
             )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
-        except FileURLRetrievalError as e:
-            print('Skip. (a gdown error has occurred)')
-            return Error(
-                FileURLRetrievalError,
-                e,
-            )
-        except DownloadError as e:
-            print('Skip. (A gdown error has occurred)') # to-do: Can I combine these two excepts into one?
-            return Error(
-                DownloadError, 
-                e,
-            )
+        except DownloadError as error:
+            print('Skip. (A gdown error has occurred)')
+            return error
+
         else:
             return Path(saved)
 
@@ -301,7 +275,7 @@ class Task:
         return None
 
 
-    def _extract(self, saved: Path) -> None | Error: 
+    def _extract(self, saved: Path) -> None | PatoolError: # to-do: None or Path, which one should the method return when there's no errors occur?
         if not patoolib.is_archive(saved): 
             return # to-do: log the file path.
         try:
@@ -312,11 +286,8 @@ class Task:
                 interactive=False, 
                 verbosity=-1
             )
-        except PatoolError as e:
-            return Error(
-                FileURLRetrievalError,
-                e,
-            )
+        except PatoolError as error:
+            return error
 
         saved.unlink() # to-do: patoolib can't extract some types of archive and it won't raise an error in this case, and the archive will be deleted next. That's not what we want.
 
