@@ -55,12 +55,11 @@ class Task:
         layout = self._inspect(html)
         tracks = self._get_track_data(html, layout)
 
-        li = [] # to-do: rename the variable.
         for track in tracks:
             track_dir = self._mkdir(track)
             urls = self._get_urls(track)
-            if len(urls) != 1:
-                li.append(track) # to-do: show the list after the task is over
+            if self._track_has_multiple_urls(urls):
+                self._log_multiple_urls(track.num)
 
             for link_num, url in enumerate(urls, start=1):
                 self._print_horizontal_line()
@@ -68,15 +67,37 @@ class Task:
 
                 download = self._dispatch(url)
                 res = download(url, track_dir)
-                if res is None: # to-do: record the track number.
+                if res is None: 
+                    self._log_unsupported_link(
+                        track.num, 
+                        link_num, 
+                        url,
+                    )
                     continue
                 elif isinstance(res, Exception):
-                    self._log(res, track.num, link_num, url)
+                    self._log_error(
+                        res, 
+                        track.num, 
+                        link_num, 
+                        url,
+                    )
                     continue  
 
                 extracting_res = self._extract(res)
+                if extracting_res is None:
+                    self._log_not_an_archive(
+                        track.num, 
+                        link_num, 
+                        url,
+                    )
                 if isinstance(extracting_res, Exception):
-                    self._log(extracting_res, track.num, link_num, url)
+                    self._log_error(
+                        extracting_res, 
+                        track.num, 
+                        link_num, 
+                        url,
+                    )
+                    continue
 
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -165,15 +186,19 @@ class Task:
         return [ a['href'] for a in track.addr.find_all('a')]
 
 
+    def _track_has_multiple_urls(self, urls) -> bool:
+        return len(urls) != 1
+
+
     def _validate(self, data: str) -> str: 
         if len(data) > 255:
             data = data[:255]
         return re.sub(r'[*"/\<>:|?]', '_', data)
 
 
-    def _print_now_processing(self, track_num: str, index: int) -> None: # to-do: rename the method.
+    def _print_now_processing(self, track_num: str, link_num: int) -> None: 
         print(
-            f'Processing track {track_num}, link {index}...'
+            f'Processing track {track_num}, link {link_num}...'
         )
 
     
@@ -184,19 +209,62 @@ class Task:
         )
 
 
-    def _log(
+    def _log_multiple_urls(self, track_num: str) -> None:
+        term_width = os.get_terminal_size()
+        horizontal_line = '-' * term_width.columns
+        logger.info(
+            f'\n'
+            f'track {track_num}\n'
+            f'There\'s multiple downloadable links in this track.\n'
+            f'{horizontal_line}'
+        )
+
+
+    def _log_unsupported_link(self, 
+        track_num: str, 
+        link_num: int, 
+        url: str,
+    ) -> None:
+        term_width = os.get_terminal_size()
+        horizontal_line = '-' * term_width.columns
+        logger.info(
+            f'\n'
+            f'track {track_num}, link {link_num}\n'
+            f'Can not find a proper way to download this file.\n'
+            f'{horizontal_line}'
+        )
+
+
+    def _log_error(
         self, 
         error: FileURLRetrievalError | DownloadError | PatoolError, 
         track_num: str, 
-        index: int, 
+        link_num: int, 
         url: str,
     ) -> None: 
         term_width = os.get_terminal_size()
         horizontal_line = '-' * term_width.columns
         logger.info(
             f'\n'
-            f"{type(error).__name__} in track {track_num}, link {index}. ({url}) \n"
+            f'Track {track_num}, link {link_num}\n'
+            f'{type(error).__name__}\n'
             f'{error}\n'
+            f'{horizontal_line}'
+        )
+
+
+    def _log_not_an_archive(
+        self, 
+        track_num: str, 
+        link_num: int, 
+        url: str,
+    ) -> None: 
+        term_width = os.get_terminal_size()
+        horizontal_line = '-' * term_width.columns
+        logger.info(
+            f'\n'
+            f"track {track_num}, link {link_num}\n"
+            f'There\' probably an attachment in this directory.\n'
             f'{horizontal_line}'
         )
 
@@ -278,9 +346,9 @@ class Task:
         return None
 
 
-    def _extract(self, saved: Path) -> None | PatoolError: # to-do: None or Path, which one should the method return when there's no errors occur?
+    def _extract(self, saved: Path) -> str | None | PatoolError: # to-do: None or Path, which one should the method return when there's no errors occur?
         if not patoolib.is_archive(saved): 
-            return # to-do: log the file path.
+            return None 
         try:
             print('Extracting...')
             patoolib.extract_archive( # to-do: could not find an executable program to extract format rar; candidates are rar,unrar,7z,7zz,7zzs,unar
@@ -293,6 +361,7 @@ class Task:
             return error
 
         saved.unlink() # to-do: patoolib can't extract some types of archive and it won't raise an error in this case, and the archive will be deleted next. That's not what we want.
+        return 'successful'
 
 
     def _handle_filedepth(self, track_dir: Path):
