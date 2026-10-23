@@ -3,6 +3,7 @@ import sys
 import logging
 from collections import namedtuple
 from dataclasses import dataclass
+from typing import ClassVar
 from pathlib import Path
 import os
 import requests
@@ -32,21 +33,20 @@ Track = namedtuple('Track', [
 
 @dataclass
 class Task:
-    event: int 
+    event: str
     save_to: Path
-    start: int = 1
-    end: int = 999
-    SITE = "https://manbow.nothing.sh/event/event.cgi?action=URLList" # to-do: implement it as a class constant.
+    start: str = '1'
+    end: str = '999'
+    SITE: ClassVar[str] = "https://manbow.nothing.sh/event/event.cgi?action=URLList"
 
 
     @classmethod
     def from_sysargv(cls, argv: list) -> Task:
-        _, event, save_to, start, end = argv
+        _, event, save_to, *start_and_end = argv
         return cls(
             event, 
             Path(save_to), 
-            start, 
-            end,
+            *start_and_end,
         )
 
 
@@ -304,11 +304,11 @@ def main():
         level=logging.INFO,
     ) 
 
-    if len(sys.argv) == 5:
+    if len(sys.argv) >= 3:
         task = Task.from_sysargv(sys.argv)
         task.run()
     else: 
-        print('requires 4 arguments: event number, save_to, start, and end.')  
+        print('Requires at least 2 arguments: the event number and the output filepath')  
 
 
 if __name__ == '__main__':  
