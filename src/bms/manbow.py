@@ -18,14 +18,14 @@ import patoolib
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
-Track = namedtuple('Track', [
-    'event', 
-    'num', 
-    'artists', 
-    'team', 
-    'title', 
-    'size', 
-    'addr',
+Track = namedtuple('Track', [ # to-do: add type hints to these attributes.
+    'event', # str
+    'num', # str
+    'artists', # str
+    'team', # str
+    'title', # str
+    'size', # str
+    'addr', # Tag
 ])
 
 
@@ -51,33 +51,32 @@ class Task:
 
 
     def run(self):
-        soup = self._fetch_html()
-        has_team = self._inspect_headers(soup)
-        tracks = self._get_tracks(soup, has_team)
+        html = self._fetch_html()
+        layout = self._inspect(html)
+        tracks = self._get_track_data(html, layout)
 
         li = [] # to-do: rename the variable.
-        for track in tracks:    # to-do: show the track number clearly before self._download()
+        for track in tracks:
             track_dir = self._mkdir(track)
-            anchors = track.addr.find_all('a')
-            if len(anchors) != 1:
-                li.append(track)
+            urls = self._get_urls(track)
+            if len(urls) != 1:
+                li.append(track) # to-do: show the list after the task is over
 
-            for index, anchor in enumerate(anchors, start=1):
+            for link_num, url in enumerate(urls, start=1):
                 self._print_horizontal_line()
-                self._print_msg(track.num, index) # to-do: rename the method
+                self._print_now_processing(track.num, link_num) 
 
-                download = self._dispatch(anchor)
-                result = download(anchor, to=track_dir) # to-do: pass url instead of anchor
-                if result is None: # to-do: record the track number.
+                download = self._dispatch(url)
+                res = download(url, track_dir)
+                if res is None: # to-do: record the track number.
                     continue
-                elif isinstance(result, Exception):
-                    self._log_error(result, track.num, index, anchor)
+                elif isinstance(res, Exception):
+                    self._log(res, track.num, link_num, url)
                     continue  
 
-                result = self._extract(result)
-                if isinstance(result, Exception):
-                    self._log_error(result, track.num, index, anchor)
-
+                extracting_res = self._extract(res)
+                if isinstance(extracting_res, Exception):
+                    self._log(extracting_res, track.num, link_num, url)
 
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -90,8 +89,11 @@ class Task:
         return BeautifulSoup(html, 'html5lib')
     
 
-    def _inspect_headers(self, soup) -> bool:
-        headers = [th.text for th in soup.thead.find_all('th')]
+    def _inspect(self, html: BeautifulSoup) -> str:
+        """
+        The manbow website has two differrent layouts, and this method is used to tell which one the event page belongs to.
+        """
+        headers = [th.text for th in html.thead.find_all('th')]
         match headers:
             case [
                 'No', 
@@ -101,7 +103,7 @@ class Task:
                 'Size', 
                 'Addr',
             ]:
-                return True 
+                return "has_team" 
                 # has the "team" column.
             case [
                 'No', 
@@ -110,22 +112,22 @@ class Task:
                 'Size', 
                 'Addr',
             ]:
-                return False 
-                # doesn't have the "team" column. 
+                return "doesn\'t_have_team"
+                # doesn't have the "team" column.
             case _:
                 raise Exception(f'Match-case failed. headers: {headers}.')
 
 
-    def _get_tracks(self, soup, has_team: bool) -> list[Track]:
+    def _get_track_data(self, html: BeautifulSoup, layout: str) -> list[Track]:
         tracks = []
-        rows = [tr.find_all('td') for tr in soup.tbody.find_all('tr')]
+        rows = [tr.find_all('td') for tr in html.tbody.find_all('tr')]
         for row in rows:
-            match has_team, row:
-                case True, [num, artists, team, title, size, addr]:
+            match layout, row:
+                case "has_team", [num, artists, team, title, size, addr]:
                     tracks.append(
                         Track(
                             self.event,
-                            int(num.text),
+                            num.text,
                             artists.text,
                             team.text,
                             title.text,
@@ -133,11 +135,11 @@ class Task:
                             addr,
                         ) 
                     ) 
-                case False, [num, artists, title, size, addr]:
+                case "doesn\'t_have_team", [num, artists, title, size, addr]:
                     tracks.append(
                         Track(
                             self.event,
-                            int(num.text),
+                            num.text,
                             artists.text,
                             None,
                             title.text,
@@ -146,7 +148,7 @@ class Task:
                         ) 
                     ) 
                 case _:
-                    raise Exception(f'Match-case failed. has_team: {has_team}, row_data: {row_data}.')
+                    raise Exception(f'Match-case failed. layout: {layout}, row_data: {row_data}.')
         return tracks
 
 
@@ -159,13 +161,17 @@ class Task:
         return track_dir
 
 
+    def _get_urls(self, track: Track) -> list[str]:
+        return [ a['href'] for a in track.addr.find_all('a')]
+
+
     def _validate(self, data: str) -> str: 
         if len(data) > 255:
             data = data[:255]
         return re.sub(r'[*"/\<>:|?]', '_', data)
 
 
-    def _print_msg(self, track_num: int, index: int) -> None: # to-do: rename the method.
+    def _print_now_processing(self, track_num: str, index: int) -> None: # to-do: rename the method.
         print(
             f'Processing track {track_num}, link {index}...'
         )
@@ -178,31 +184,30 @@ class Task:
         )
 
 
-    def _log_error( # to-do: rename the method to _log
+    def _log(
         self, 
         error: FileURLRetrievalError | DownloadError | PatoolError, 
-        track_num: int, 
+        track_num: str, 
         index: int, 
-        anchor: Tag,
+        url: str,
     ) -> None: 
         term_width = os.get_terminal_size()
         horizontal_line = '-' * term_width.columns
         logger.info(
             f'\n'
-            f"{type(error).__name__} in track {track_num}, link {index}. ({anchor['href']})\n"
+            f"{type(error).__name__} in track {track_num}, link {index}. ({url}) \n"
             f'{error}\n'
             f'{horizontal_line}'
         )
 
 
-    def _dispatch(self, anchor: Tag) -> self._dl_google_folder | self._dl_google_file | self._dl_dropbox:
+    def _dispatch(self, url: str) -> self._dl_google_folder | self._dl_google_file | self._dl_dropbox:
         dispatch_table = { 
             self._is_google_folder: self._dl_google_folder,
             is_google_drive_url: self._dl_google_file, 
             self._is_dropbox: self._dl_dropbox,
         }
         for matches, do in dispatch_table.items():
-            url = anchor['href']
             if matches(url):
                 return do
         return self._handle_unmatched_link
@@ -216,11 +221,11 @@ class Task:
         return re.search(r'\drive\folders', url)
 
 
-    def _dl_google_file(self, anchor: Tag, to: Path) -> Path | FileURLRetrievalError | DownloadError: 
-        output = str(to) + os.path.sep  
+    def _dl_google_file(self, url: str, track_dir: Path) -> Path | FileURLRetrievalError | DownloadError: 
+        output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download(
-                url=anchor['href'], 
+                url=url, 
                 output=output,
             )
             # gdown.download: output expects str. If it ends with a path sep, the basename will be appended automatically.
@@ -235,11 +240,11 @@ class Task:
             return Path(saved)
 
         
-    def _dl_google_folder(self, anchor: Tag, to: Path) -> Path | DownloadError: 
-        output = str(to) + os.path.sep  
+    def _dl_google_folder(self, url: str, track_dir: Path) -> Path | DownloadError: 
+        output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download_folder(
-                url=anchor['href'], 
+                url=url, 
                 output=output,
             ) 
             # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
@@ -251,9 +256,9 @@ class Task:
             return Path(saved)
 
 
-    def _dl_dropbox(self, anchor: Tag, to: Path) -> Path | DownloadError:
-        url = re.sub('dl=0', 'dl=1', anchor['href'])
-        output = str(to) + os.path.sep  
+    def _dl_dropbox(self, url: str, track_dir: Path) -> Path | DownloadError:
+        url = re.sub('dl=0', 'dl=1', url)
+        output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download(
                 url=url, 
@@ -268,7 +273,7 @@ class Task:
             return Path(saved)
 
 
-    def _handle_unmatched_link(self, andchor: Tag, to: Path) -> None: # to-do: handle unmatched track properly.
+    def _handle_unmatched_link(self, andchor: Tag, track_dir: Path) -> None: # to-do: handle unmatched track properly.
         print('Skip. (unsupported URL host)')
         return None
 
