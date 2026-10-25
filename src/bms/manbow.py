@@ -176,7 +176,7 @@ class Task:
 
     def _mkdir(self, track) -> Path:
         name = self._validate(
-            f'{track.num}. {track.title} (by {track.artists})'
+            f'{track.num:0>3}. {track.title} (by {track.artists})'
         )
         track_dir = self.save_to / name 
         track_dir.mkdir(parents=True, exist_ok=True)
@@ -347,11 +347,11 @@ class Task:
         return None
 
 
-    def _extract(self, saved: Path) -> str | None | PatoolError: # to-do: None or Path, which one should the method return when there's no errors occur?
+    def _extract(self, saved: Path) -> str | None | PatoolError: 
         if not patoolib.is_archive(saved): 
             return None 
         try:
-            patoolib.extract_archive( # to-do: could not find an executable program to extract format rar; candidates are rar,unrar,7z,7zz,7zzs,unar
+            patoolib.extract_archive(
                 str(saved), 
                 outdir=str(saved.parent), 
                 interactive=False, 
@@ -360,7 +360,7 @@ class Task:
         except PatoolError as error:
             return error
 
-        saved.unlink() # to-do: patoolib can't extract some types of archive and it won't raise an error in this case, and the archive will be deleted next. That's not what we want.
+        saved.unlink() 
         return 'successful'
 
 
