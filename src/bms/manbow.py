@@ -14,21 +14,22 @@ import gdown
 from gdown.parse_url import is_google_drive_url
 from gdown import FileURLRetrievalError, DownloadError
 import patoolib
+from patoolib.util import PatoolError
 
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
-Track = namedtuple('Track', [ # to-do: add type hints to these attributes.
-    'event', # str
-    'num', # str
-    'artists', # str
-    'team', # str
-    'title', # str
-    'size', # str
-    'addr', # Tag
-])
 
 
+@dataclass
+class Track:
+    event: str
+    num: str
+    artists: str
+    team: str
+    title: str
+    size: str
+    addr: Tag
 
 
 @dataclass
@@ -324,7 +325,7 @@ class Task:
             return Path(saved)
 
 
-    def _dl_dropbox(self, url: str, track_dir: Path) -> Path | DownloadError:
+    def _dl_dropbox(self, url: str, track_dir: Path) -> Path | DownloadError: # to-do: check if the file downloaded is a html or not. 
         url = re.sub('dl=0', 'dl=1', url)
         output = str(track_dir) + os.path.sep  
         try:
@@ -350,7 +351,6 @@ class Task:
         if not patoolib.is_archive(saved): 
             return None 
         try:
-            print('Extracting...')
             patoolib.extract_archive( # to-do: could not find an executable program to extract format rar; candidates are rar,unrar,7z,7zz,7zzs,unar
                 str(saved), 
                 outdir=str(saved.parent), 
