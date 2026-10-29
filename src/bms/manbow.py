@@ -289,7 +289,7 @@ class Task:
     def _dispatch(self, url: str) -> self._dl_google_folder | self._dl_google_file | self._dl_dropbox:
         dispatch_table = { 
             self._is_google_folder: self._dl_google_folder,
-            is_google_drive_url: self._dl_google_file, 
+            self._is_google_file: self._dl_google_file, 
             self._is_dropbox: self._dl_dropbox,
         }
         for matches, do in dispatch_table.items():
@@ -298,16 +298,16 @@ class Task:
         return self._handle_unmatched_link
 
 
-    def _is_google_file(self) -> None:
-        pass
+    def _is_google_file(self, url: str) -> bool:
+        return is_google_drive_url(url) and not self._is_google_folder(url)
+
+
+    def _is_google_folder(self, url: str) -> bool: # to-do: move this method to another module.
+        return re.search(r'/drive/folders', url)
 
 
     def _is_dropbox(self, url: str) -> bool: # to-do: move this method to another module.
         return re.search(r'dropbox\.com', url)
-
-
-    def _is_google_folder(self, url: str) -> bool: # to-do: move this method to another module.
-        return re.search(r'\drive\folders', url)
 
 
     def _dl_google_file(self, url: str, track_dir: Path) -> Path | FileURLRetrievalError | DownloadError: 
@@ -329,7 +329,7 @@ class Task:
             return Path(saved)
 
         
-    def _dl_google_folder(self, url: str, track_dir: Path) -> Path | DownloadError: 
+    def _dl_google_folder(self, url: str, track_dir: Path) -> Path | DownloadError: # to-do: fix the error
         output = str(track_dir) + os.path.sep  
         try:
             saved = gdown.download_folder(
