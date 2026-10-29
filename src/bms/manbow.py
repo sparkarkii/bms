@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys
 import logging
+import json
 from collections import namedtuple
 from dataclasses import dataclass
 from typing import ClassVar
@@ -19,8 +20,6 @@ from patoolib.util import PatoolError
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
-
-
 @dataclass
 class Track:
     event: str
@@ -30,6 +29,7 @@ class Track:
     title: str
     size: str
     addr: Tag
+
 
 
 @dataclass
@@ -56,6 +56,8 @@ class Task:
         layout = self._inspect(html)
         tracks = self._get_track_data(html, layout)
 
+        
+        failed = []
         for track in tracks:
             track_dir = self._mkdir(track)
             urls = self._get_urls(track)
@@ -69,6 +71,11 @@ class Task:
                 download = self._dispatch(url)
                 res = download(url, track_dir)
                 if res is None: 
+                    failed.append({
+                        'track_dir': str(track_dir),
+                        'url': url,
+                        'direct_url': None,
+                    })
                     self._log_unsupported_link(
                         track.num, 
                         link_num, 
@@ -76,6 +83,11 @@ class Task:
                     )
                     continue
                 elif isinstance(res, Exception):
+                    failed.append({
+                        'track_dir': str(track_dir),
+                        'url': url,
+                        'direct_url': None,
+                    })
                     self._log_error(
                         res, 
                         track.num, 
@@ -84,21 +96,23 @@ class Task:
                     )
                     continue  
 
-                extracting_res = self._extract(res)
-                if extracting_res is None:
+                extr_res = self._extract(res)
+                if extr_res is None:
                     self._log_not_an_archive(
                         track.num, 
                         link_num, 
                         url,
                     )
-                if isinstance(extracting_res, Exception):
+                if isinstance(extr_res, Exception):
                     self._log_error(
-                        extracting_res, 
+                        extr_res, 
                         track.num, 
                         link_num, 
                         url,
                     )
                     continue
+
+        self._export_json(failed)
 
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -370,6 +384,11 @@ class Task:
 
     def _handle_filedepth(self, track_dir: Path):
         pass
+
+
+    def _export_json(self, failed: list[dict]) -> None:
+        with open('failed.json', mode='w', encoding='utf-8') as file:
+            json.dump(failed, file, indent=4)
 
 
 
