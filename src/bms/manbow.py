@@ -9,7 +9,6 @@ import os
 import requests
 from bs4 import BeautifulSoup, Tag
 import re
-from jinja2 import Environment, PackageLoader, select_autoescape
 
 import gdown
 from gdown.parse_url import is_google_drive_url
@@ -20,6 +19,8 @@ from patoolib.util import PatoolError
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
+
+
 @dataclass
 class Track:
     event: str
@@ -29,13 +30,6 @@ class Track:
     title: str
     size: str
     addr: Tag
-
-@dataclass
-class FailedLink:
-    num: str
-    href: str
-
-
 
 
 @dataclass
@@ -62,8 +56,6 @@ class Task:
         layout = self._inspect(html)
         tracks = self._get_track_data(html, layout)
 
-        failed_links = []
-
         for track in tracks:
             track_dir = self._mkdir(track)
             urls = self._get_urls(track)
@@ -77,9 +69,6 @@ class Task:
                 download = self._dispatch(url)
                 res = download(url, track_dir)
                 if res is None: 
-                    failed_links.append(
-                        FailedLink(track.num, url)
-                    )
                     self._log_unsupported_link(
                         track.num, 
                         link_num, 
@@ -87,9 +76,6 @@ class Task:
                     )
                     continue
                 elif isinstance(res, Exception):
-                    failed_links.append(
-                        FailedLink(track.num, url)
-                    )
                     self._log_error(
                         res, 
                         track.num, 
@@ -113,8 +99,6 @@ class Task:
                         url,
                     )
                     continue
-
-            self._export_html(failed_links)
 
 
     def _fetch_html(self) -> BeautifulSoup:
@@ -370,7 +354,7 @@ class Task:
     def _extract(self, saved: Path) -> str | None | PatoolError: 
         if not patoolib.is_archive(saved): 
             return None 
-        try: # to-do: add suffix detection
+        try:
             patoolib.extract_archive(
                 str(saved), 
                 outdir=str(saved.parent), 
@@ -384,23 +368,8 @@ class Task:
         return 'successful'
 
 
-    def _handle_filedepth(self) -> None:
+    def _handle_filedepth(self, track_dir: Path):
         pass
-
-    
-    def _export_html(self, failed_links: list[FailedLink]) -> None:
-        env = Environment(
-            loader = PackageLoader('bms'),
-            autoescape = select_autoescape(),
-        )
-        templ = env.get_template('failedlinks_templ.html')
-        with open('failed_links.html', 'w') as file:
-            file.write(
-                templ.render(failed_links = failed_links)
-            )
-            
-
-
 
 
 
