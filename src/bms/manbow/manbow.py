@@ -17,18 +17,11 @@ from gdown import FileURLRetrievalError, DownloadError
 import patoolib
 from patoolib.util import PatoolError
 
+from models import Track # to-do: .models or models?
+
 
 logger = logging.getLogger(__name__) # to-do: where to place this line of code?
 
-@dataclass
-class Track:
-    event: str
-    num: str
-    artists: str
-    team: str
-    title: str
-    size: str
-    addr: Tag
 
 
 
@@ -96,21 +89,24 @@ class Task:
                     )
                     continue  
 
-                extr_res = self._extract(res)
-                if extr_res is None:
-                    self._log_not_an_archive(
-                        track.num, 
-                        link_num, 
-                        url,
-                    )
-                if isinstance(extr_res, Exception):
-                    self._log_error(
-                        extr_res, 
-                        track.num, 
-                        link_num, 
-                        url,
-                    )
-                    continue
+                archives = res if isinstance(res, list) else [res]
+
+                for archive in archives:
+                    extr_res = self._extract(archive)
+                    if extr_res is None:
+                        self._log_not_an_archive(
+                            track.num, 
+                            link_num, 
+                            url,
+                        )
+                    if isinstance(extr_res, Exception):
+                        self._log_error(
+                            extr_res, 
+                            track.num, 
+                            link_num, 
+                            url,
+                        )
+                        continue
 
         self._export_json(failed)
 
@@ -121,7 +117,8 @@ class Task:
             'start':self.start, 
             'end':self.end,
         }
-        html = requests.get(self.SITE, params=params).content.decode('Shift_JIS')
+        # to-do: detect charset
+        html = requests.get(self.SITE, params=params).content.decode('Shift_JIS') # to-do: change the encoding to cp932, replace='error'
         return BeautifulSoup(html, 'html5lib')
     
 
@@ -327,12 +324,12 @@ class Task:
             return Path(saved)
 
         
-    def _dl_google_folder(self, url: str, track_dir: Path) -> Path | DownloadError: # to-do: fix the error
-        output = str(track_dir) + os.path.sep  
+    def _dl_google_folder(self, url: str, track_dir: Path) -> list[Path] | DownloadError: 
+        track_dir.rmdir()
         try:
             saved = gdown.download_folder(
                 url=url, 
-                output=output,
+                output=str(track_dir),
             ) 
             # gdown.download_folder: output expects str. If it ends with a path sep, the basename will be appended automatically.
         except DownloadError as error:
@@ -340,7 +337,7 @@ class Task:
             return error
 
         else:
-            return Path(saved)
+            return [Path(s) for s in saved]
 
 
     def _dl_dropbox(self, url: str, track_dir: Path) -> Path | DownloadError: # to-do: check if the file downloaded is a html or not. 
@@ -368,6 +365,8 @@ class Task:
     def _extract(self, saved: Path) -> str | None | PatoolError: 
         if not patoolib.is_archive(saved): 
             return None 
+       # if saved.suffix not in patoolib.supported_formats():
+       #     return None
         try:
             patoolib.extract_archive(
                 str(saved), 
